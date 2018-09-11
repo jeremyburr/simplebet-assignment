@@ -1,0 +1,317 @@
+<html>
+  <head>
+    <title>NBA Top Scorer Stats</title>
+  <script src="d3.js"></script>
+  <style>
+    body { 
+      font: 12px Arial;
+      background: #DDD;
+    }
+    #svgplot {
+      background-image: linear-gradient(#EEE, #FFF)!important; 
+      padding: 20px;
+    } 
+    #svgplot path { 
+      stroke: steelblue;
+      stroke-width: 1.15; 
+      fill: none;
+    } 
+    #svgpie path {
+      stroke: white;
+    }
+    .axis path,
+    .axis line {
+      fill: none;
+      stroke: grey;
+      stroke-width: 1;
+      shape-rendering: crispEdges;
+    }
+  </style>
+  </head>
+  <meta charset="UTF-8">
+  <body> 
+    <script> 
+
+      // Initial list of player names 
+
+      let playerNames = ["Lebron James","James Harden","Russell Westbrook","Kevin Duran",
+       "Demar Derozan","Anthony Davis","Stephen Curry",
+       "Kobe Bryant","Carmelo Anthony", "Kevin Garnett"]; 
+
+      // Player IDs
+
+      let playerIDs = ["2544","201935","201566","201142","201942","203076","201939","977","2546", "708"]; 
+
+      // Cors Proxy Config 
+      let localhost = "http://localhost:8080/";
+
+      // API Endpoint
+      let api = "https://stats.nba.com/stats/playercareerstats?PerMode=Totals&PlayerID=";
+
+      let playerData = {};
+      let playerTotals = {};
+
+      // Fetch data for each playerID as promise, return all
+
+      let fetchActions = playerIDs.map(ID => {
+        return (
+          fetch(localhost+api+ID)
+            .then(resolve=>resolve.json())
+        )
+      }); 
+
+
+      // Create an object for player information, seasonal points, calculate total
+
+      let fetchResults = Promise.all(fetchActions);
+      fetchResults.then(fetchData=>{
+        let count = 0; 
+        for (player of fetchData) { 
+          let seasons = player.resultSets[0].rowSet;
+          let name = playerNames[count]
+          playerData[name] = {}; 
+          playerTotals[name] = {
+            total: 0
+          }; 
+          for (let season of seasons) {
+            let year = parseInt(season[1]);
+            if (year > 2007) {
+              let points = season[26];
+              playerData[name][year] = points;
+              playerTotals[name].total += points;
+            }
+          }
+          count++ 
+        } 
+
+        let playersArray = [];
+
+        // Create array each player's season and points for D3
+
+        for (let player in playerData) {
+          let playerStats = [];
+            let years = Object.keys(playerData[player]);
+            let count = 0;
+          for (let points in playerData[player]) {
+            let year = parseInt(years[count]);
+            playerStats.push({ year: year, points: playerData[player][points] }); 
+            count++;
+          }
+          playersArray.push(playerStats); 
+        } 
+        
+        // Use 10-season array to calculate value range
+
+        let extentArray = playersArray[0]; 
+
+        // Chart centering 
+
+        var margin = {top: 30, right: 20, bottom: 30, left: 50},
+        width = 900 - margin.left - margin.right,
+        height = 400 - margin.top - margin.bottom;
+
+        // Set data scales (y doesn't have to be linearScale), and colorscheme
+
+        var x = d3.scaleLinear().range([0, width]);
+        var y = d3.scaleLinear().range([height, 0]);
+        var z = d3.scaleOrdinal(d3.schemeCategory10);
+
+        // 10 Ticks on X Axis, for years
+
+        var xAxis = d3.axisBottom().scale(x)
+            .ticks(10)
+            .tickFormat(d3.format("d"));
+
+        // 5 Ticks on Y Axis
+
+        var yAxis = d3.axisLeft().scale(y)
+            .ticks(5); 
+        
+        // Generate SVG plot
+
+        var svg = d3.select("body")
+          .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .attr("id","svgplot")
+            .attr("fill", "black")
+            .style("border", "solid 1px black")
+            .style("background", "white")
+
+          .append("g")
+            .attr("transform", 
+              "translate(" + margin.left + "," + margin.top + ")"); 
+
+        // Set domains
+
+        x.domain(d3.extent(extentArray, function(d) { return d.year; }));
+        y.domain([0, d3.max(extentArray, function(d) { return d.points + 700; })]);
+
+        // Append x axis
+
+          svg.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(xAxis);
+
+        // Append Y Axis
+
+          svg.append("g")
+            .attr("class", "y axis")
+            .call(yAxis);
+
+          // Y Axis label
+
+          svg.append("text")
+            .attr("x", 20)
+            .attr("y", 0)
+            .attr("id", "title")
+            .attr("font-size", 20)
+            .attr("style", "fill: black; writing-mode: tb; glyph-orientation-vertical: 0")
+            .text("Points");
+
+          // Chart Title 
+
+          svg.append("text")
+            .text("Decade Point Totals for 10 NBA Players") 
+            .style("font-size","22px") 
+            .attr("dx","240px") 
+            .style("text-decoration", "underline");
+
+          // X Axis Label
+
+          svg.append("text")
+            .attr("class", "x label")
+            .attr("text-anchor", "end")
+            .attr("dx", "432px")
+            .attr("dy", "370px")
+            .style("font-size", "20px")
+            .text("Year");
+
+          // Create line for each player
+
+          var valueline = d3.line()
+            .x(function(d) {return x(d.year); })
+            .y(function(d) { return y(d.points); })
+            .curve(d3.curveMonotoneX)
+
+          // Generate dots and line for each player in array 
+
+        let nextCount = 0;
+        for (let player of playersArray) { 
+            let data = player; 
+            svg.append("path")
+              .attr("class", "line")
+              .attr("d", valueline(data))
+              .style("stroke", function(data) {return z(playerNames[nextCount]); }); 
+            svg.selectAll("dot")
+                .data(data)
+              .enter().append("circle")
+                .attr("r", 3)
+                .attr("cx", function(d) { return x(d.year); })
+                .attr("cy", function(d) { return y(d.points); })
+                .style("fill", function(data) {return z(playerNames[nextCount]); }); 
+          nextCount++ 
+        } 
+
+          // Create svg pie chart 
+
+          var svgpie = d3.select("body").append("svg")
+            .attr("width","800")
+            .attr("height","300")
+            .attr("id","svgpie") 
+
+          // Center chart 
+
+          width = +svgpie.attr("width"),
+          height = +svgpie.attr("height"),
+          radius = Math.min(width, height) / 2,
+
+          g = svgpie.append("g")
+            .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")") 
+          
+          // Create pie shape, arc, label
+
+          var pie = d3.pie()
+            .sort(null)
+            .value(function(d) { return d.total; });
+
+          var path = d3.arc()
+            .outerRadius(radius - 10)
+            .innerRadius(0);
+
+          var label = d3.arc()
+            .outerRadius(radius - 40)
+            .innerRadius(radius - 40);
+
+          // Generate grand totals 
+
+          let totalsData = [];
+          let grandTotal = 0;
+
+          for (let player in playerTotals) {
+            grandTotal += playerTotals[player].total;
+            totalsData.push({player: player, total: playerTotals[player].total});
+          } 
+
+          // Append arcs with grand total data
+
+            var arc = g.selectAll(".arc")
+              .data(pie(totalsData))
+              .enter().append("g")
+                .attr("class", "arc");
+
+            arc.append("path")
+                .attr("d", path) .attr("fill", function(d) {return z(d.data.player); }); 
+            arc.append("text")
+                .attr("transform", function(d) {var c = label.centroid(d); return "translate(" + c[0]*.90 +","+ c[1]*.90 + ")"; })
+                .attr("dx", "-30")
+                .attr("dy", "5")
+                .style("font-size","14px")
+                .style("font-weight","bold")
+                .text(function(d) { 
+                  // Get player initials and percentage
+                  var initials = d.data.player.match(/\b\w/g) || [];
+                  initials = ((initials.shift() || '') + (initials.pop() || '')).toUpperCase();
+                  d.data.percentage = Math.round(d.data.total / grandTotal * 100);
+                  let words = d.data.player.split(' ');
+                  return initials + ' ' + d.data.percentage + '%';
+                 });
+
+              // Create legend
+
+              var legendG = svgpie.selectAll(".legend") 
+                .data(pie(totalsData))
+                .enter().append("g")
+                .attr("transform", function(d,i){
+                  return "translate(" + (width - 750) + "," + (i * 25 + 20) + ")"; 
+                })
+                .attr("class", "legend");   
+
+              // Introduce colors
+
+              legendG.append("rect") // make a matching color rect
+                .attr("width", 20)
+                .attr("height", 20)
+                .attr("fill", function(d, i) {
+                  return z(i);
+                });
+    
+                // Append to chart
+
+                legendG.append("text") // add the text
+                  .text(function(d){
+                    return d.data.player + "  " + d.data.total;
+                  })
+                  .style("font-size", 14)
+                  .attr("y", 15)
+                  .attr("x", 25);
+
+            })
+
+             
+    </script>
+  </body>
+</html>
+
+
